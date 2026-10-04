@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kido — public snapshot</title>
+<style>:root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --fg:#e8e8ea; --dim:#9aa0a6;
+        --ok:#56b4e9; --warn:#e69f00; --hot:#d55e00; --run:#009e73; }
+* { box-sizing: border-box; }
+body { margin:0; padding:1.2rem; background:var(--bg); color:var(--fg);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:.5rem; }
+h1 { font-size:1.4rem; margin:0 0 1rem; }
+.usage { color:var(--dim); font-size:.9rem; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:1rem; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem; }
+.row { display:flex; justify-content:space-between; align-items:center; }
+.name { font-size:1.25rem; font-weight:600; }
+.status { font-size:.8rem; padding:.15rem .6rem; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
+.status.running { color:var(--run); border-color:var(--run); }
+.meta { color:var(--dim); font-size:.85rem; margin:.4rem 0 .8rem; }
+.bar { height:10px; background:#262a33; border-radius:5px; overflow:hidden; }
+.bar i { display:block; height:100%; width:0; background:var(--ok); }
+.bar i.warn { background:var(--warn); } .bar i.hot { background:var(--hot); }
+.small { font-size:.8rem; color:var(--dim); margin-top:.4rem; }
+.empty { color:var(--dim); }
+.machine { display:flex; flex-wrap:wrap; gap:1.2rem; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--line); }
+.machine .m { min-width:160px; }
+.machine .m .label { color:var(--dim); font-size:.8rem; }
+.machine .m .val { font-size:1.1rem; font-weight:600; }
+.machine .bar { height:6px; background:#262a33; border-radius:3px; overflow:hidden; margin-top:.3rem; }
+.machine .bar i { display:block; height:100%; background:var(--ok); }
+.machine .bar i.warn { background:var(--warn); } .machine .bar i.hot { background:var(--hot); }
+footer { color:var(--dim); font-size:.75rem; margin-top:1.2rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Kido — session activity (anonymized snapshot)</h1>
+  <div id="usage">loading…</div>
+</header>
+<p style="color:#9aa; font-size:0.85em; max-width:40em;">
+  Static snapshot, not live. Names are generic labels (User A, B, ...), not real names.
+  Rebuilt by hand, no automatic refresh.
+</p>
+<main id="sessions" class="grid"></main>
+<section id="machine" class="machine"></section>
+<footer id="foot"></footer>
+<template id="card">
+  <section class="card">
+    <div class="row"><span class="name"></span><span class="status"></span></div>
+    <div class="meta"></div>
+    <div class="bar"><i></i></div>
+    <div class="row small"><span class="ctx"></span><span class="ago"></span></div>
+  </section>
+</template>
+<script>
+const DATA = {"sessions": {"sessions": [{"name": "User A", "channel": "WhatsApp DM", "status": "running", "model": "claude-sonnet-5", "context_tokens": 123579, "context_window": 1000000, "context_pct": 12.4, "last_active_s": 0}, {"name": "User B", "channel": "WhatsApp DM", "status": "idle", "model": "claude-sonnet-5", "context_tokens": 84381, "context_window": 1000000, "context_pct": 8.4, "last_active_s": 2644}], "active_minutes": 60}, "usage": {"day": {"hours": 24, "jobs": 11, "by_model": [{"model": "sonnet", "jobs": 9}, {"model": "opus", "jobs": 1}]}, "week": {"hours": 168, "jobs": 321, "by_model": [{"model": "sonnet", "jobs": 186}, {"model": "opus", "jobs": 126}, {"model": "fable", "jobs": 2}]}, "month": {"hours": 720, "jobs": 323, "by_model": [{"model": "sonnet", "jobs": 186}, {"model": "opus", "jobs": 128}, {"model": "fable", "jobs": 2}]}}, "machine": {"cpu": {"load1": 1.3, "load5": 1.23, "cores": 10, "pct": 13.0}, "memory": {"total_gb": 25.8, "used_pct": 97.5}, "disk": {"total_gb": 494.4, "used_gb": 154.7, "used_pct": 31.3}, "uptime_s": 663836}, "generated_at": "2026-10-04T20:58:46+03:00"};
+function ago(s) {
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  return `${(s / 3600).toFixed(1)} h ago`;
+}
+const kTok = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1e3)}k`;
+const shortModel = (m) => (m || "?").replace(/^claude-/, "").replace(/-\d{8}$/, "");
+function render(data) {
+  const box = document.getElementById("sessions");
+  box.replaceChildren();
+  if (!data.sessions.length) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = `No sessions active in the last ${data.active_minutes} min.`;
+    box.append(p);
+  }
+  for (const s of data.sessions) {
+    const el = document.getElementById("card").content.cloneNode(true);
+    el.querySelector(".name").textContent = s.name;
+    const st = el.querySelector(".status");
+    st.textContent = s.status;
+    st.classList.add(s.status);
+    el.querySelector(".meta").textContent = `${s.channel} · ${shortModel(s.model)}`;
+    const bar = el.querySelector(".bar i");
+    if (s.context_pct == null) {
+      el.querySelector(".ctx").textContent = "context: n/a";
+    } else {
+      bar.style.width = `${Math.min(100, s.context_pct)}%`;
+      if (s.context_pct >= 80) bar.classList.add("hot"); else if (s.context_pct >= 50) bar.classList.add("warn");
+      el.querySelector(".ctx").textContent =
+        `context ${s.context_pct}% (${kTok(s.context_tokens)} / ${kTok(s.context_window)})`;
+    }
+    el.querySelector(".ago").textContent = ago(s.last_active_s);
+    box.append(el);
+  }
+}
+function barClass(pct) { return pct >= 85 ? "hot" : pct >= 65 ? "warn" : ""; }
+function renderMachine(m) {
+  const box = document.getElementById("machine");
+  box.replaceChildren();
+  if (!m.cpu) { box.textContent = "machine stats unavailable"; return; }
+  const rows = [
+    ["CPU load", `${m.cpu.pct}%`, m.cpu.pct, `${m.cpu.load1} / ${m.cpu.cores} cores`],
+    ["RAM", `${m.memory.used_pct}%`, m.memory.used_pct, `of ${m.memory.total_gb} GB`],
+    ["Disk", `${m.disk.used_pct}%`, m.disk.used_pct, `${m.disk.used_gb} / ${m.disk.total_gb} GB`],
+  ];
+  for (const [label, val, pct, sub] of rows) {
+    const el = document.createElement("div");
+    el.className = "m";
+    el.innerHTML = `<div class="label">${label}</div><div class="val">${val}</div>` +
+      `<div class="bar"><i class="${barClass(pct)}" style="width:${Math.min(100, pct)}%"></i></div>` +
+      `<div class="label">${sub}</div>`;
+    box.append(el);
+  }
+  const days = Math.floor(m.uptime_s / 86400);
+  const el = document.createElement("div");
+  el.className = "m";
+  el.innerHTML = `<div class="label">Uptime</div><div class="val">${days}d</div>`;
+  box.append(el);
+}
+render(DATA.sessions);
+renderMachine(DATA.machine);
+const d = DATA.usage.day, mo = DATA.usage.month;
+const mix = d.by_model.map((m) => `${m.model} ${m.jobs}`).join(", ");
+document.getElementById("usage").textContent =
+  `24 h: ${d.jobs} jobs${mix ? ` (${mix})` : ""}  |  30 d: ${mo.jobs} jobs`;
+document.getElementById("foot").textContent = `snapshot taken ${DATA.generated_at}`;
+</script>
+</body>
+</html>
